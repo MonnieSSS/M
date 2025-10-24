@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>抽獎（你的名單已內建 / CodePen 穩定版）</title>
+<style>
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC","PingFang TC","Helvetica Neue",Arial,"Microsoft JhengHei",sans-serif;background:#fafafa;color:#222}
+  main{max-width:900px;margin:0 auto;padding:14px;display:grid;gap:12px}
+  .card{background:#fff;border:1px solid #eee;border-radius:12px;padding:14px}
+  textarea{width:100%;min-height:160px;font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace;font-size:15px}
+  input[type=number]{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:16px}
+  .btns{display:flex;flex-wrap:wrap;gap:8px}
+  button{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#f4f4f4;cursor:pointer}
+  button.primary{background:#111;color:#fff;border-color:#111}
+  .muted{color:#666;font-size:13px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#f0f0f0;font-size:12px;margin-left:6px}
+  ol{margin:0;padding-left:22px}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid #eee;padding:6px 4px;text-align:left;font-size:14px}
+  .ok{color:#067d3b}.error{color:#b42318}
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h2>🎁 加權隨機抽獎（逐一揭曉，不重複）</h2>
+    <textarea id="entries">Chintsung,5
+Ejen,10
+Emma & Family,15
+fafachu,20
+Fio L,1
+Fuyi Lo,3
+Izzy Kuo,5
+Jack Liu,7
+Kai Lee,9
+Kimmy,12
+Miki,15
+Ming,18
+Miriam chen,25
+Sally,8
+Sophia Wang,30
+Vivian,6
+Winny,3
+Zoe Yang,5
+Monnie,1
+Alice,9</textarea>
+    <div style="display:grid;gap:12px;grid-template-columns:1fr 1fr">
+      <div class="card" style="padding:10px">
+        <label for="count"><strong>抽出人數（每次抽一位，不重複）</strong></label>
+        <input id="count" type="number" min="1" step="1" value="4" inputmode="numeric">
+        <div class="muted">上限會自動限制到有效參賽者數。</div>
+      </div>
+      <div class="card" style="padding:10px">
+        <div><strong>操作流程</strong></div>
+        <div class="muted">按「開始新一輪」→ 按「抽下一位」重複直到抽滿；或用「一次抽完」。</div>
+      </div>
+    </div>
+    <div class="btns">
+      <button class="primary" id="startBtn" type="button">開始新一輪</button>
+      <button id="drawOneBtn" type="button" disabled>抽下一位</button>
+      <button id="drawAllBtn" type="button" disabled>一次抽完</button>
+      <button id="resetBtn" type="button" disabled>重置</button>
+      <button id="copyBtn" type="button">複製結果</button>
+      <span class="muted" id="status" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>即時預覽</strong>
+    <div id="previewInfo" class="muted"></div>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>姓名</th><th>票數</th></tr></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <strong>抽獎結果</strong>
+      <span id="summary" class="muted"></span>
+    </div>
+    <ol id="resultList"><li class="muted">尚未抽出，按「開始新一輪」→「抽下一位」。</li></ol>
+  </div>
+</main>
+
+<script>
+/* 放在 body 尾端，確保 DOM 已存在（CodePen 最穩） */
+(function(){
+  function $(id){ return document.getElementById(id); }
+  var entriesEl=$("entries"), countEl=$("count");
+  var startBtn=$("startBtn"), drawOneBtn=$("drawOneBtn"), drawAllBtn=$("drawAllBtn"), resetBtn=$("resetBtn"), copyBtn=$("copyBtn");
+  var statusEl=$("status"), summaryEl=$("summary"), resultList=$("resultList");
+  var previewBody=$("previewBody"), previewInfo=$("previewInfo");
+
+  // 解析：吃「名字,數字」最穩（你給的名單已是這種格式）
+  function parseEntries(text){
+    var lines=String(text||"").split(/\r?\n/), seen=Object.create(null);
+    for (var i=0;i<lines.length;i++){
+      var line=lines[i].trim(); if (!line) continue;
+      var parts=line.split(",");
+      var name=parts[0]?parts[0].trim():"";
+      var num=parts[1]?Number(String(parts[1]).replace(/[^\d.-]/g,"")):NaN;
+      if (!name || !isFinite(num) || num<=0) continue;
+      if (!seen[name]) seen[name]=0;
+      seen[name]+=num;
+    }
+    var list=[]; for (var k in seen) list.push({name:k, tickets:Math.floor(seen[k])});
+    return list;
+  }
+
+  function updatePreview(){
+    var data=parseEntries(entriesEl.value);
+    previewBody.innerHTML=""; var total=0;
+    for (var i=0;i<data.length;i++){
+      var tr=document.createElement('tr');
+      tr.innerHTML="<td>"+data[i].name+"</td><td>"+data[i].tickets+"</td>";
+      previewBody.appendChild(tr); total+=data[i].tickets;
+    }
+    previewInfo.textContent = data.length ? ("共 "+data.length+" 人，總票數 "+total) : "未解析出名單";
+    return data;
+  }
+
+  function weightedPick(items){
+    var total=0; for (var i=0;i<items.length;i++) total+=items[i].tickets;
+    var r=Math.random()*total;
+    for (var j=0;j<items.length;j++){ if (r<items[j].tickets) return items[j]; r-=items[j].tickets; }
+    return items[items.length-1];
+  }
+
+  var session=null;
+  function setControls(active){ drawOneBtn.disabled=!active; drawAllBtn.disabled=!active; resetBtn.disabled=!active; }
+  function updateSummary(){
+    if (!session){ summaryEl.textContent=""; return; }
+    var total=0; for (var i=0;i<session.entrants.length;i++) total+=session.entrants[i].tickets;
+    summaryEl.textContent="共 "+session.entrants.length+" 人、"+total+" 票；已揭曉 "+session.winners.length+" 位。";
+  }
+  function renderWinners(){
+    resultList.innerHTML="";
+    if (!session || !session.winners.length){ resultList.innerHTML='<li class="muted">尚未抽出</li>'; return; }
+    for (var i=0;i<session.winners.length;i++){
+      var w=session.winners[i], li=document.createElement('li');
+      li.innerHTML=(i+1)+". "+w.name+' <span class="pill">'+w.tickets+'票</span>';
+      resultList.appendChild(li);
+    }
+    resultList.scrollIntoView({behavior:"smooth"});
+  }
+
+  function startRound(){
+    var entrants=updatePreview();
+    if (!entrants.length){ statusEl.textContent="請先輸入正確的名單與票數。"; return; }
+    var count=Math.max(1, Math.floor(Number(countEl.value)||1));
+    if (count>entrants.length) count=entrants.length;
+    countEl.value=String(count);
+    session={entrants:entrants.slice(), remaining:entrants.slice(), count:count, winners:[]};
+    statusEl.textContent="新一輪開始。按「抽下一位」。";
+    setControls(true); renderWinners(); updateSummary();
+  }
+  function drawOne(){
+    if (!session){ startRound(); return; }
+    if (session.winners.length>=session.count){ statusEl.textContent="已達設定人數。"; setControls(false); return; }
+    if (!session.remaining.length){ statusEl.textContent="沒有可抽名單。"; setControls(false); return; }
+    var pick=weightedPick(session.remaining);
+    for (var i=0;i<session.remaining.length;i++){ if (session.remaining[i].name===pick.name){ session.remaining.splice(i,1); break; } }
+    session.winners.push(pick); statusEl.textContent='抽出：「'+pick.name+'」'; renderWinners(); updateSummary();
+    if (session.winners.length>=session.count){ statusEl.textContent+='（完成）'; setControls(false); }
+  }
+  function drawAll(){ if (!session) startRound(); while(session && session.winners.length<session.count) drawOne(); }
+  function resetRound(){ session=null; setControls(false); resultList.innerHTML='<li class="muted">尚未抽出</li>'; summaryEl.textContent=""; statusEl.textContent="本輪已重置。"; }
+  function copyResults(){
+    if (!session || !session.winners.length){ statusEl.textContent="尚無結果可複製。"; return; }
+    var lines=session.winners.map(function(w,i){return (i+1)+". "+w.name+"（票數 "+w.tickets+"）";}).join("\n");
+    var ta=document.createElement('textarea'); ta.value=lines; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); statusEl.textContent='結果已複製。'; }catch(e){ statusEl.textContent='請手動複製。'; }
+    document.body.removeChild(ta);
+  }
+
+  // 綁定事件
+  entriesEl.addEventListener('input', updatePreview);
+  startBtn.addEventListener('click', startRound);
+  drawOneBtn.addEventListener('click', drawOne);
+  drawAllBtn.addEventListener('click', drawAll);
+  resetBtn.addEventListener('click', resetRound);
+  copyBtn.addEventListener('click', copyResults);
+
+  // 首次預覽
+  updatePreview();
+})();
+</script>
+</body>
+</html>
